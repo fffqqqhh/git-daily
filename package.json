@@ -1,0 +1,47 @@
+{
+  "name": "git-daily",
+  "displayName": "Git Daily · 每日提交助手",
+  "description": "每天提醒提交代码，在侧边栏完成提交、推送与同步。",
+  "version": "0.1.0",
+  "publisher": "fffqqqhh",
+  "license": "MIT",
+  "engines": { "vscode": "^1.95.0" },
+  "categories": ["SCM Providers", "Other"],
+  "main": "./src/extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "extensionDependencies": ["vscode.git"],
+  "capabilities": { "untrustedWorkspaces": { "supported": false }, "virtualWorkspaces": false },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --check src/extension.js && node --check src/core.js",
+    "package": "npx @vscode/vsce package --no-dependencies"
+  },
+  "repository": { "type": "git", "url": "https://github.com/fffqqqhh/git-daily.git" },
+  "contributes": {
+    "commands": [
+      { "command": "gitDaily.commit", "title": "Git Daily: 提交代码", "icon": "$(git-commit)" },
+      { "command": "gitDaily.push", "title": "Git Daily: 推送", "icon": "$(cloud-upload)" },
+      { "command": "gitDaily.sync", "title": "Git Daily: 同步（先拉取，再推送）", "icon": "$(sync)" },
+      { "command": "gitDaily.fetch", "title": "Git Daily: 获取远程状态", "icon": "$(cloud-download)" },
+      { "command": "gitDaily.refresh", "title": "Git Daily: 刷新", "icon": "$(refresh)" },
+      { "command": "gitDaily.settings", "title": "Git Daily: 提醒设置", "icon": "$(gear)" },
+      { "command": "gitDaily.review", "title": "Git Daily: 查看改动", "icon": "$(diff)" }
+    ],
+    "views": { "scm": [{ "id": "gitDaily.repositories", "name": "Git Daily · 每日提交助手" }] },
+    "viewsWelcome": [{ "view": "gitDaily.repositories", "contents": "打开一个本地 Git 仓库即可开始。\n每天定时提醒，手动提交、推送和同步。" }],
+    "menus": { "view/title": [
+      { "command": "gitDaily.refresh", "when": "view == gitDaily.repositories", "group": "navigation" },
+      { "command": "gitDaily.settings", "when": "view == gitDaily.repositories", "group": "navigation" }
+    ] },
+    "configuration": {
+      "title": "Git Daily",
+      "properties": {
+        "gitDaily.enabled": { "type": "boolean", "default": true, "description": "启用每日提交提醒。" },
+        "gitDaily.reminderTime": { "type": "string", "default": "17:30", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$", "description": "每日提醒时间（24 小时制，使用扩展宿主的本地时间）。" },
+        "gitDaily.weekdaysOnly": { "type": "boolean", "default": false, "description": "仅周一到周五提醒。" },
+        "gitDaily.onlyWhenDirty": { "type": "boolean", "default": true, "description": "仅在仓库有未提交改动时提醒；存在待推送提交也会提醒。" },
+        "gitDaily.snoozeMinutes": { "type": "integer", "default": 30, "minimum": 1, "maximum": 1440, "description": "稍后提醒的间隔（分钟）。" }
+      }
+    }
+  }
+}
