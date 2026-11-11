@@ -2,7 +2,7 @@
 
 const vscode = require('vscode');
 const path = require('node:path');
-const { dayKey, changes, reminderDue, assertResolved, assertBranch, syncRepository } = require('./core');
+const { dayKey, changes, reminderDue, reminderReason, assertResolved, assertBranch, syncRepository } = require('./core');
 
 async function activate(context) {
   const output = vscode.window.createOutputChannel('Git Daily');
@@ -17,6 +17,7 @@ async function activate(context) {
   const api = git.getAPI(1);
   const emitter = new vscode.EventEmitter();
   const busy = new Set();
+  const pendingReminders = new Set();
   const subscriptions = new Map();
   let checking = false;
   let disposed = false;
@@ -54,7 +55,8 @@ async function activate(context) {
       return [summary, ...[
         ['review', '查看改动', 'diff'], ['commit', '提交代码', 'git-commit'],
         ['push', '推送', 'cloud-upload'], ['sync', '同步（先拉取，再推送）', 'sync'],
-        ['fetch', '获取远程状态', 'cloud-download']
+        ['fetch', '获取远程状态', 'cloud-download'],
+        ['testReminder', '立即测试提醒', 'bell'], ['reminderStatus', '提醒诊断', 'info']
       ].map(([action, label, icon]) => {
         const node = new vscode.TreeItem(label);
         node.iconPath = new vscode.ThemeIcon(icon);
@@ -162,35 +164,82 @@ async function activate(context) {
     vscode.window.showInformationMessage('推送成功。');
   }
 
+  async function showReminder(repo, savedKey, record) {
+    const count = changes(repo.state).length;
+    const action = await vscode.window.showInformationMessage(
+      `Git Daily · ${title(repo)}：${count ? `还有 ${count} 个文件未提交` : repo.state.HEAD?.ahead ? '有本地提交待推送' : '到每日检查时间了'}。`,
+      { modal: config().get('reminderStyle', 'notification') === 'dialog' },
+      '查看改动', '提交代码', '推送', '稍后提醒', '今天忽略'
+    );
+    if (disposed) return;
+    if (action === '稍后提醒') {
+      const latest = context.workspaceState.get(savedKey, {});
+      if (latest.day === record.day && latest.time === record.time) {
+        await context.workspaceState.update(savedKey, { ...record, snoozeUntil: Date.now() + config().get('snoozeMinutes', 30) * 60000 });
+      }
+    } else if (action === '查看改动') await vscode.commands.executeCommand('workbench.view.scm');
+    else if (action === '提交代码') await operate(repo, '提交代码', commit);
+    else if (action === '推送') await operate(repo, '推送', push);
+  }
+
   async function checkReminders() {
-    if (checking || disposed || !vscode.window.state.focused || !vscode.workspace.isTrusted) return;
+    if (checking || disposed || !config().enabled || !vscode.window.state.focused || !vscode.workspace.isTrusted) return;
     checking = true;
     try {
       for (const repo of api.repositories) {
         if (disposed) break;
-        if (busy.has(key(repo))) continue;
-        const savedKey = `reminder:${key(repo)}`;
-        const now = new Date();
-        const saved = context.workspaceState.get(savedKey, {});
-        if (!reminderDue(now, config(), saved, repo.state)) continue;
-        await repo.status();
-        if (!reminderDue(now, config(), saved, repo.state)) continue;
-        const day = dayKey(now);
-        await context.workspaceState.update(savedKey, { day });
-        const count = changes(repo.state).length;
-        const action = await vscode.window.showInformationMessage(
-          `Git Daily · ${title(repo)}：${count ? `还有 ${count} 个文件未提交` : repo.state.HEAD?.ahead ? '有本地提交待推送' : '到每日检查时间了'}。`,
-          '查看改动', '提交代码', '推送', '稍后提醒', '今天忽略'
-        );
-        if (disposed) break;
-        if (action === '稍后提醒') {
-          await context.workspaceState.update(savedKey, { day, snoozeUntil: Date.now() + config().get('snoozeMinutes', 30) * 60000 });
-        } else if (action === '查看改动') await vscode.commands.executeCommand('workbench.view.scm');
-        else if (action === '提交代码') await operate(repo, '提交代码', commit);
-        else if (action === '推送') await operate(repo, '推送', push);
+        const pendingKey = `${key(repo)}:${config().reminderTime}`;
+        if (busy.has(key(repo)) || pendingReminders.has(pendingKey)) continue;
+        try {
+          const savedKey = `reminder:${key(repo)}`;
+          const now = new Date();
+          const saved = context.workspaceState.get(savedKey, {});
+          // Refresh before checking dirty state: Git's initial cache can still be empty.
+          await repo.status();
+          if (!reminderDue(now, config(), saved, repo.state)) continue;
+          const record = { day: dayKey(now), time: config().reminderTime };
+          pendingReminders.add(pendingKey);
+          await context.workspaceState.update(savedKey, record);
+          output.appendLine(`[${now.toISOString()}] ${title(repo)} 已发送提醒；样式=${config().get('reminderStyle', 'notification')}。普通通知若未显示，请检查 VS Code 免打扰或改用 dialog。`);
+          // Notification promises resolve on user interaction, not when the toast appears.
+          // Do not let an unattended toast block checks for all other repositories.
+          void showReminder(repo, savedKey, record)
+            .catch(async error => {
+              const latest = context.workspaceState.get(savedKey, {});
+              if (latest.day === record.day && latest.time === record.time && !latest.snoozeUntil) {
+                await context.workspaceState.update(savedKey, undefined);
+              }
+              output.appendLine(`提醒操作失败：${error.message}`);
+            })
+            .finally(() => pendingReminders.delete(pendingKey));
+        } catch (error) {
+          pendingReminders.delete(pendingKey);
+          output.appendLine(`${title(repo)} 提醒检查失败：${error.message}`);
+        }
       }
     } catch (error) { output.appendLine(`提醒检查失败：${error.message}`); }
     finally { checking = false; }
+  }
+
+  async function reminderStatus(candidate) {
+    try {
+      const repo = await selectRepository(candidate);
+      if (!repo) return;
+      await repo.status();
+      const now = new Date();
+      const saved = context.workspaceState.get(`reminder:${key(repo)}`, {});
+      const reason = !vscode.window.state.focused ? '窗口不在前台' : pendingReminders.has(`${key(repo)}:${config().reminderTime}`) ? '已有提醒等待处理，请查看通知中心' : reminderReason(now, config(), saved, repo.state) || '触发条件已满足，将在下一次检查时提醒';
+      const details = [
+        `仓库：${repo.rootUri.fsPath}`, `扩展宿主时间：${now.toLocaleString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`,
+        `设定时间：${config().reminderTime}`, `启用：${config().enabled}；仅工作日：${config().weekdaysOnly}；仅有改动：${config().onlyWhenDirty}`,
+        `已保存改动：${changes(repo.state).length}；待推送：${repo.state.HEAD?.ahead || 0}`,
+        `上次提醒：${saved.day || '无'} ${saved.time || ''}`, `状态：${reason}`,
+        '普通通知受 VS Code 免打扰及单个扩展通知过滤影响；可设置 gitDaily.reminderStyle 为 dialog。'
+      ].join('\n');
+      output.appendLine(details);
+      await vscode.window.showInformationMessage('Git Daily · 提醒诊断', { modal: true, detail: details }, '知道了');
+      return details;
+    } catch (error) { await report(error); }
   }
 
   function watch(repo) {
@@ -213,7 +262,13 @@ async function activate(context) {
     vscode.commands.registerCommand('gitDaily.fetch', repo => operate(repo, '获取远程状态', selected => selected.fetch({ all: true }))),
     vscode.commands.registerCommand('gitDaily.refresh', () => Promise.all(api.repositories.map(repo => operate(repo, '刷新', selected => selected.status())))),
     vscode.commands.registerCommand('gitDaily.review', () => vscode.commands.executeCommand('workbench.view.scm')),
-    vscode.commands.registerCommand('gitDaily.settings', () => vscode.commands.executeCommand('workbench.action.openSettings', 'gitDaily'))
+    vscode.commands.registerCommand('gitDaily.settings', () => vscode.commands.executeCommand('workbench.action.openSettings', 'gitDaily')),
+    vscode.commands.registerCommand('gitDaily.testReminder', () => vscode.window.showInformationMessage(
+      'Git Daily · 测试提醒',
+      { modal: true, detail: '看到这个对话框说明插件可以显示提醒。此测试不受提醒时间、仓库改动和当天提醒记录限制，也不会消耗今天的提醒。自动提醒若不出现，请运行“Git Daily: 提醒诊断”；若普通通知被隐藏，可将提醒样式改为 dialog。' },
+      '知道了'
+    )),
+    vscode.commands.registerCommand('gitDaily.reminderStatus', reminderStatus)
   );
   api.repositories.forEach(watch);
   const timer = setInterval(() => void checkReminders(), 30000);

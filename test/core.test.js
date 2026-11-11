@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { dayKey, reminderDue, changes, syncRepository } = require('../src/core');
+const { dayKey, reminderDue, reminderReason, changes, syncRepository } = require('../src/core');
 const config = { enabled: true, reminderTime: '17:30', weekdaysOnly: false, onlyWhenDirty: true };
 const change = name => ({ uri: { toString: () => name } });
 const state = () => ({ HEAD: { name: 'main', commit: 'abc', upstream: { remote: 'origin', name: 'main' } }, indexChanges: [], workingTreeChanges: [], untrackedChanges: [], mergeChanges: [] });
@@ -11,12 +11,12 @@ test('到点提醒，提前不提醒，重启同日不重复提醒', () => {
   const s = state(); s.workingTreeChanges.push(change('a'));
   assert.equal(reminderDue(new Date(2026, 10, 11, 17, 29), config, {}, s), false);
   assert.equal(reminderDue(now, config, {}, s), true);
-  assert.equal(reminderDue(now, config, { day: dayKey(now) }, s), false);
+  assert.equal(reminderDue(now, config, { day: dayKey(now), time: '17:30' }, s), false);
   assert.equal(reminderDue(now, config, { day: '2026-11-10' }, s), true);
 });
 test('稍后提醒在到期后恢复', () => {
   const s = state(); s.workingTreeChanges.push(change('a'));
-  const saved = { day: dayKey(now), snoozeUntil: now.getTime() + 60000 };
+  const saved = { day: dayKey(now), time: '17:30', snoozeUntil: now.getTime() + 60000 };
   assert.equal(reminderDue(now, config, saved, s), false);
   assert.equal(reminderDue(new Date(now.getTime() + 60000), config, saved, s), true);
 });
@@ -36,6 +36,12 @@ test('周末、无效时间与跨日稍后提醒', () => {
 test('同一文件部分暂存时只计数一次', () => {
   const s = state(); s.indexChanges.push(change('a')); s.workingTreeChanges.push(change('a'));
   assert.equal(changes(s).length, 1);
+});
+test('同日调整提醒时间可再提醒，旧版本记录不会阻止升级后测试', () => {
+  const s = state(); s.workingTreeChanges.push(change('a'));
+  assert.equal(reminderDue(now, config, { day: dayKey(now), time: '17:29' }, s), true);
+  assert.equal(reminderDue(now, config, { day: dayKey(now) }, s), true);
+  assert.equal(reminderReason(now, config, { day: dayKey(now), time: '17:30' }, s), '今天此时间已提醒');
 });
 test('同步先拉取后推送', async () => {
   const calls = [];

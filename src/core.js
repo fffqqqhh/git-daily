@@ -11,12 +11,22 @@ function changes(state) {
   ].map(change => [change.uri.toString(), change])).values()];
 }
 
-function reminderDue(now, config, saved, state) {
-  if (!config.enabled || (config.weekdaysOnly && [0, 6].includes(now.getDay()))) return false;
+function reminderReason(now, config, saved, state) {
+  if (!config.enabled) return '提醒已关闭';
+  if (config.weekdaysOnly && [0, 6].includes(now.getDay())) return '今天不是工作日';
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(config.reminderTime);
-  if (!match || now.getHours() * 60 + now.getMinutes() < Number(match[1]) * 60 + Number(match[2])) return false;
-  if (saved.day === dayKey(now) && (!saved.snoozeUntil || now.getTime() < saved.snoozeUntil)) return false;
-  return !config.onlyWhenDirty || changes(state).length > 0 || (state.HEAD?.ahead || 0) > 0;
+  if (!match) return '提醒时间格式无效';
+  if (now.getHours() * 60 + now.getMinutes() < Number(match[1]) * 60 + Number(match[2])) return '尚未到提醒时间';
+  if (saved.day === dayKey(now) && saved.time === config.reminderTime) {
+    if (!saved.snoozeUntil) return '今天此时间已提醒';
+    if (now.getTime() < saved.snoozeUntil) return '尚未到稍后提醒时间';
+  }
+  if (config.onlyWhenDirty && !changes(state).length && !(state.HEAD?.ahead > 0)) return '没有已保存的改动或待推送提交';
+  return undefined;
+}
+
+function reminderDue(now, config, saved, state) {
+  return reminderReason(now, config, saved, state) === undefined;
 }
 
 function assertResolved(repo) {
@@ -42,4 +52,4 @@ async function syncRepository(repo) {
   await repo.push();
 }
 
-module.exports = { dayKey, changes, reminderDue, assertResolved, assertBranch, syncRepository };
+module.exports = { dayKey, changes, reminderDue, reminderReason, assertResolved, assertBranch, syncRepository };
