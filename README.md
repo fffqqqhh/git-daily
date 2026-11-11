@@ -14,9 +14,11 @@
 
 ## 安装和使用
 
+线上分发流程已准备好，首次上架仍需发布者配置，详见 [线上更新与发布](PUBLISHING.md)。市场版可用后，用户可从扩展市场安装并启用自动更新；已通过 VSIX 安装的用户需为此扩展开启一次 Auto Update。源码推送和本地打包本身不会触发客户端更新。
+
 需要桌面版 VS Code 1.95+、Git，以及已启用的内置 Git 扩展。主要面向本地仓库，不支持 vscode.dev 中的虚拟仓库。
 
-1. 下载本项目生成的 `git-daily-0.1.1.vsix`。
+1. 下载本项目生成的 `git-daily-0.1.2.vsix`。
 2. 在 VS Code 扩展面板右上角选择 **… → 从 VSIX 安装**，选择该文件。
 3. 打开自己的 Git 仓库，点击左侧“源代码管理”，展开 **Git Daily · 每日提交助手**。
 4. 点击“查看改动”审查差异，再选择“提交代码”“推送”或“同步”。
@@ -56,6 +58,7 @@
 本项目使用 JavaScript（CommonJS）与 VS Code Extension API，无运行时第三方依赖，不需要编译。
 
 ```sh
+npm ci
 npm test
 npm run check
 npm run package

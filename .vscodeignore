@@ -4,3 +4,6 @@ test/**
 node_modules/**
 *.vsix
 **/.DS_Store
+.github/**
+PUBLISHING.md
+package-lock.json
