@@ -1,6 +1,8 @@
 # 线上更新与发布
 
-项目已准备好通过 Visual Studio Marketplace 分发，由 VS Code 负责检查和安装更新。**添加工作流不等于已上架**：首次发布需要先完成下面的发布者配置，再创建版本标签。
+本仓库已配置发布者 `fffqqqhh` 及 Trusted Publishing，`v0.1.2` 标签的自动发布任务已成功上传 0.1.2。市场验证及可安装状态以 [市场页面](https://marketplace.visualstudio.com/items?itemName=fffqqqhh.git-daily) 为准。由 VS Code 负责检查和安装后续更新。
+
+以下一次性配置步骤供重新部署时参考；当前仓库无需重复创建发布者、策略或 `v0.1.2` 标签，后续直接按“以后如何发布”更新版本。
 
 ## 一次性配置（仓库所有者）
 

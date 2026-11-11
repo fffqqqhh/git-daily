@@ -14,7 +14,7 @@
 
 ## 安装和使用
 
-线上分发流程已准备好，首次上架仍需发布者配置，详见 [线上更新与发布](PUBLISHING.md)。市场版可用后，用户可从扩展市场安装并启用自动更新；已通过 VSIX 安装的用户需为此扩展开启一次 Auto Update。源码推送和本地打包本身不会触发客户端更新。
+支持通过 [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=fffqqqhh.git-daily) 安装和接收更新。在 VS Code 扩展面板搜索 `@id:fffqqqhh.git-daily`，安装后启用 Auto Update。已通过 VSIX 安装的用户需为此扩展开启一次 Auto Update。市场验证及版本可用状态以市场页面为准。维护者发布流程见 [线上更新与发布](PUBLISHING.md)。源码推送和本地打包本身不会触发客户端更新。
 
 需要桌面版 VS Code 1.95+、Git，以及已启用的内置 Git 扩展。主要面向本地仓库，不支持 vscode.dev 中的虚拟仓库。
 
