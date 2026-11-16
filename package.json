@@ -2,7 +2,7 @@
   "name": "git-daily",
   "displayName": "Git Daily · 每日提交助手",
   "description": "今日提交状态面板：查看分支、改动、待推送提交及下次提醒，直接提交和推送。",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "fffqqqhh",
   "license": "MIT",
   "engines": {
@@ -27,8 +27,9 @@
   },
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "node --check src/extension.js && node --check src/core.js && node --check src/dashboard.js",
-    "package": "vsce package --no-dependencies"
+    "check": "node --check src/extension.js && node --check src/core.js && node --check src/dashboard.js && node --check src/releaseNotes.js && node scripts/check-release.cjs",
+    "package": "vsce package --no-dependencies",
+    "vscode:prepublish": "npm run check"
   },
   "devDependencies": {
     "@vscode/vsce": "4.1.0"
@@ -99,6 +100,11 @@
         "command": "gitDaily.openDashboard",
         "title": "Git Daily: 打开今日提交状态面板",
         "icon": "$(dashboard)"
+      },
+      {
+        "command": "gitDaily.showReleaseNotes",
+        "title": "Git Daily: 查看更新说明",
+        "icon": "$(sparkle)"
       }
     ],
     "views": {
@@ -124,6 +130,11 @@
         },
         {
           "command": "gitDaily.settings",
+          "when": "view == gitDaily.repositories",
+          "group": "navigation"
+        },
+        {
+          "command": "gitDaily.showReleaseNotes",
           "when": "view == gitDaily.repositories",
           "group": "navigation"
         }

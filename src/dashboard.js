@@ -89,7 +89,8 @@ function createDashboard(vscode, { api, context, config, onDidChangeTreeData, pe
       const incoming = row(repo, 'incoming', `待拉取提交：${!head?.upstream ? '未关联远程分支' : head.behind === undefined ? '状态未知' : `${head.behind} 条`}`, 'cloud-download');
       const operations = [
         ['commit', '提交代码', 'git-commit'], ['push', '推送', 'cloud-upload'],
-        ['sync', '同步（先拉取，再推送）', 'sync'], ['fetch', '获取远程状态', 'cloud-download']
+        ['sync', '同步（先拉取，再推送）', 'sync'], ['fetch', '获取远程状态', 'cloud-download'],
+        ['showReleaseNotes', '查看更新说明', 'sparkle']
       ].map(([action, label, icon]) => row(repo, `action:${action}`, label, icon, action));
       return [branchRow, files, outgoing, incoming, reminder, today, ...operations];
     }
