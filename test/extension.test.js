@@ -12,7 +12,7 @@ class NoonDate extends Date {
 async function setup(options = {}) {
   const commands = new Map(), calls = [], errors = [], notifications = [];
   const saved = new Map(options.saved || []);
-  let timer, onConfig;
+  let timer, onConfig, provider;
   const config = { enabled: false, reminderTime: '00:00', weekdaysOnly: false, onlyWhenDirty: true, ...options.config };
   config.get = (key, fallback) => config[key] ?? fallback;
   const disposable = { dispose() {} };
@@ -38,7 +38,7 @@ async function setup(options = {}) {
     workspace: { isTrusted: true, getConfiguration: () => config, onDidChangeConfiguration: fn => { onConfig = fn; return disposable; }, saveAll: async () => options.save !== false },
     window: {
       state: { focused: options.focused !== false }, createOutputChannel: () => ({ ...disposable, appendLine() {}, show() {} }),
-      createStatusBarItem: () => ({ ...disposable, show() {}, hide() {} }), registerTreeDataProvider: () => disposable,
+      createStatusBarItem: () => ({ ...disposable, show() {}, hide() {} }), registerTreeDataProvider: (_id, value) => { provider = value; return disposable; },
       onDidChangeWindowState: event,
       showQuickPick: async (items, config) => config?.canPickMany ? (options.cancelFiles ? undefined : [items[0]]) : items[0],
       showInputBox: async () => typeof input === 'function' ? input() : input,
@@ -51,11 +51,11 @@ async function setup(options = {}) {
   const context = { subscriptions: [], workspaceState: { get: (key, fallback) => saved.get(key) ?? fallback, update: async (key, value) => { saved.set(key, value); } } };
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/extension.js'), 'utf8'), {
-    module, require: name => name === 'vscode' ? vscode : name === './core' ? core : require(name),
+    module, require: name => name === 'vscode' ? vscode : name === './core' ? core : name === './dashboard' ? require('../src/dashboard') : require(name),
     setInterval: fn => { timer = fn; return 1; }, clearInterval() {}, Date: options.fixedTime ? NoonDate : Date, Set, Map, Intl
   });
   await module.exports.activate(context);
-  return { repo, calls, errors, notifications, saved, config, window: vscode.window,
+  return { provider, repo, calls, errors, notifications, saved, config, window: vscode.window,
     tick: async () => { timer(); await new Promise(resolve => setImmediate(resolve)); },
     configure: async values => { Object.assign(config, values); onConfig({ affectsConfiguration: () => true }); await new Promise(resolve => setImmediate(resolve)); },
     run: action => commands.get(`gitDaily.${action}`)(repo) };

@@ -2,6 +2,7 @@
 
 const vscode = require('vscode');
 const path = require('node:path');
+const { createDashboard } = require('./dashboard');
 const { dayKey, changes, reminderDue, reminderReason, assertResolved, assertBranch, syncRepository } = require('./core');
 
 async function activate(context) {
@@ -32,39 +33,14 @@ async function activate(context) {
     emitter.fire();
     const dirty = api.repositories.filter(repo => changes(repo.state).length).length;
     status.text = `$(git-commit) Git Daily${dirty ? ` · ${dirty} 待提交` : ''}`;
-    status.tooltip = '打开每日提交助手';
+    status.tooltip = '打开今日提交状态面板';
     if (api.repositories.length) status.show(); else status.hide();
   }
 
-  const provider = {
-    onDidChangeTreeData: emitter.event,
-    getTreeItem: item => item,
-    getChildren(item) {
-      if (!item) return api.repositories.map(repo => {
-        const node = new vscode.TreeItem(title(repo), vscode.TreeItemCollapsibleState.Expanded);
-        node.repo = repo;
-        node.description = repo.state.HEAD?.name || '未创建分支';
-        node.tooltip = repo.rootUri.fsPath;
-        node.iconPath = new vscode.ThemeIcon('repo');
-        return node;
-      });
-      const repo = item.repo;
-      const head = repo.state.HEAD;
-      const summary = new vscode.TreeItem(`${changes(repo.state).length} 个改动 · ↑${head?.ahead || 0} ↓${head?.behind || 0}`);
-      summary.tooltip = '远程计数基于上次获取的状态，点击“获取远程状态”更新。';
-      return [summary, ...[
-        ['review', '查看改动', 'diff'], ['commit', '提交代码', 'git-commit'],
-        ['push', '推送', 'cloud-upload'], ['sync', '同步（先拉取，再推送）', 'sync'],
-        ['fetch', '获取远程状态', 'cloud-download'],
-        ['testReminder', '立即测试提醒', 'bell'], ['reminderStatus', '提醒诊断', 'info']
-      ].map(([action, label, icon]) => {
-        const node = new vscode.TreeItem(label);
-        node.iconPath = new vscode.ThemeIcon(icon);
-        node.command = { command: `gitDaily.${action}`, title: label, arguments: [repo] };
-        return node;
-      })];
-    }
-  };
+  const provider = createDashboard(vscode, {
+    api, context, config, onDidChangeTreeData: emitter.event,
+    pending: repo => pendingReminders.has(`${key(repo)}:${config().reminderTime}`)
+  });
   context.subscriptions.push(vscode.window.registerTreeDataProvider('gitDaily.repositories', provider));
 
   async function selectRepository(candidate) {
@@ -211,7 +187,8 @@ async function activate(context) {
               }
               output.appendLine(`提醒操作失败：${error.message}`);
             })
-            .finally(() => pendingReminders.delete(pendingKey));
+            .finally(() => { pendingReminders.delete(pendingKey); refresh(); });
+          refresh();
         } catch (error) {
           pendingReminders.delete(pendingKey);
           output.appendLine(`${title(repo)} 提醒检查失败：${error.message}`);
@@ -251,8 +228,12 @@ async function activate(context) {
   context.subscriptions.push(
     api.onDidOpenRepository(watch),
     api.onDidCloseRepository(repo => { subscriptions.get(repo)?.dispose(); subscriptions.delete(repo); refresh(); }),
-    vscode.workspace.onDidChangeConfiguration(event => { if (event.affectsConfiguration('gitDaily')) void checkReminders(); }),
-    vscode.window.onDidChangeWindowState(state => { if (state.focused) void checkReminders(); }),
+    vscode.workspace.onDidChangeConfiguration(event => { if (event.affectsConfiguration('gitDaily')) { refresh(); void checkReminders(); } }),
+    vscode.window.onDidChangeWindowState(state => { if (state.focused) { refresh(); void checkReminders(); } }),
+    vscode.commands.registerCommand('gitDaily.openDashboard', async () => {
+      await vscode.commands.executeCommand('gitDaily.repositories.focus');
+      await Promise.all(api.repositories.map(repo => operate(repo, '刷新', selected => selected.status())));
+    }),
     vscode.commands.registerCommand('gitDaily.commit', repo => operate(repo, '提交代码', commit)),
     vscode.commands.registerCommand('gitDaily.push', repo => operate(repo, '推送', push)),
     vscode.commands.registerCommand('gitDaily.sync', repo => operate(repo, '同步', async selected => {
@@ -271,7 +252,7 @@ async function activate(context) {
     vscode.commands.registerCommand('gitDaily.reminderStatus', reminderStatus)
   );
   api.repositories.forEach(watch);
-  const timer = setInterval(() => void checkReminders(), 30000);
+  const timer = setInterval(() => { refresh(); void checkReminders(); }, 30000);
   context.subscriptions.push({ dispose() { disposed = true; clearInterval(timer); subscriptions.forEach(item => item.dispose()); } });
   refresh();
 }

@@ -29,6 +29,33 @@ function reminderDue(now, config, saved, state) {
   return reminderReason(now, config, saved, state) === undefined;
 }
 
+function nextReminder(now, config, saved, state) {
+  if (!config.enabled) return { label: '提醒已关闭' };
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(config.reminderTime);
+  if (!match) return { label: '请设置有效的提醒时间' };
+  const reason = reminderReason(now, config, saved, state);
+  if (!reason || reason === '没有已保存的改动或待推送提交') {
+    return { date: new Date(now), label: reason ? '有改动后提醒（已到时间）' : '即将提醒' };
+  }
+  for (let offset = 0; offset < 8; offset++) {
+    let date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, Number(match[1]), Number(match[2]));
+    if (config.weekdaysOnly && [0, 6].includes(date.getDay())) continue;
+    if (offset === 0) {
+      if (saved.day === dayKey(now) && saved.time === config.reminderTime) {
+        if (!saved.snoozeUntil) continue;
+        const snooze = new Date(saved.snoozeUntil);
+        // The scheduler resets the daily record at midnight, so don't promise
+        // a cross-day snooze that the scheduler won't actually honor.
+        if (dayKey(snooze) !== dayKey(now)) continue;
+        if (snooze > date) date = snooze;
+      }
+      if (date < now) continue;
+    }
+    return { date, label: offset === 0 && saved.day === dayKey(now) && saved.snoozeUntil && saved.time === config.reminderTime ? '稍后提醒' : '已安排' };
+  }
+  return { label: '暂无下次提醒' };
+}
+
 function assertResolved(repo) {
   if (repo.state.mergeChanges.length) throw new Error('仓库存在冲突，请先在源代码管理中解决冲突。');
   if (repo.state.rebaseCommit) throw new Error('仓库正在变基，请先完成或中止变基。');
@@ -52,4 +79,4 @@ async function syncRepository(repo) {
   await repo.push();
 }
 
-module.exports = { dayKey, changes, reminderDue, reminderReason, assertResolved, assertBranch, syncRepository };
+module.exports = { dayKey, changes, reminderDue, reminderReason, nextReminder, assertResolved, assertBranch, syncRepository };
